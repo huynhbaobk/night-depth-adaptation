@@ -78,7 +78,7 @@ from monodepth2.datasets import KITTIRAWDataset, KITTIDepthDataset, KITTIOdomDat
 from monodepth2.evaluate_depth import compute_errors
 from monodepth2.layers import disp_to_depth, compute_depth_errors
 from monodepth2.trainer import Trainer
-from monodepth2.utils import normalize_image, readlines
+from monodepth2.utils import normalize_image, readlines, sec_to_hm_str
 from utils import get_n_params
 from utils.monodevsnet_options import MonoDEVSOptions
 
@@ -402,7 +402,7 @@ class MonoDEVSNetTrainer(Trainer):
                 self.model_optimizer.zero_grad()
                 self.zero_grad()
 
-            if batch_idx % 10 == 0:
+            if batch_idx % 50 == 0 or (batch_idx-1)%50 == 0:
                 duration = time.time() - before_op_time
                 self.log_time(batch_idx, duration, losses["loss"].cpu().data)
 
@@ -573,11 +573,15 @@ class MonoDEVSNetTrainer(Trainer):
         """Print a logging statement to the terminal
         """
         samples_per_sec = self.opt.batch_size / duration
-        time_so_far = time.time() - self.start_time
-        print_string = "exp_name {}  \n| dataset: {:>5} | epoch {:>3} | batch {:>6}/{:>6} | " \
-                       "examples/s: {:5.1f} | loss: {:.5f}"
-        print(print_string.format(self.log_path.split('/')[-1], self.syn_or_real, self.epoch, batch_idx,
-                                  self.num_total_batch, samples_per_sec, loss))
+        time_sofar = time.time() - self.start_time
+        training_time_left = (
+            self.num_total_steps / self.step - 1.0) * time_sofar if self.step > 0 else 0
+        print_string = "exp_name {}  \n| dataset: {:>5} | epoch {:>3} | batch {:>6} | examples/s: {:5.1f}" + \
+            " | loss: {:.5f} | time elapsed: {} | time left: {}"
+        print(print_string.format(self.log_path.split('/')[-1], self.syn_or_real, 
+                                  self.epoch, batch_idx, samples_per_sec, loss,
+                                  sec_to_hm_str(time_sofar), sec_to_hm_str(training_time_left)))
+
 
     def log(self, mode, inputs, outputs, losses):
         """Write an event to the tensorboard events file

@@ -38,13 +38,16 @@ class KITTIDataset(MonoDataset):
         line = self.filenames[0].split()
         scene_name = line[0]
         frame_index = int(line[1])
-
-        velo_filename = os.path.join(
+        
+        self.side_map = {"2": 2, "3": 3, "l": 2, "r": 3}
+        side = line[2]
+        depth_filename = os.path.join(
             self.data_path,
             scene_name,
-            "velodyne_points/data/{:010d}.bin".format(int(frame_index)))
-
-        return os.path.isfile(velo_filename)
+            "depth",
+            "image_0{}/data".format(self.side_map[side]),
+            "{:010d}.npz".format(int(frame_index)))
+        return os.path.isfile(depth_filename)
 
     def get_color(self, folder, frame_index, side, do_flip):
         color = self.loader(self.get_image_path(folder, frame_index, side))
@@ -68,16 +71,14 @@ class KITTIRAWDataset(KITTIDataset):
         return image_path
 
     def get_depth(self, folder, frame_index, side, do_flip):
-        calib_path = os.path.join(self.data_path, folder.split("/")[0])
+        ### Load precomputed depth map
+        depth_filename = os.path.join(self.data_path,
+                                    folder,
+                                    "depth",
+                                    "image_0{}/data".format(self.side_map[side]),
+                                    "{:010d}.npz".format(int(frame_index)))
 
-        velo_filename = os.path.join(
-            self.data_path,
-            folder,
-            "velodyne_points/data/{:010d}.bin".format(int(frame_index)))
-
-        depth_gt = generate_depth_map(calib_path, velo_filename, self.side_map[side])
-        depth_gt = skimage.transform.resize(
-            depth_gt, self.full_res_shape[::-1], order=0, preserve_range=True, mode='constant')
+        depth_gt = np.load(depth_filename)["arr_0"]
 
         if do_flip:
             depth_gt = np.fliplr(depth_gt)
