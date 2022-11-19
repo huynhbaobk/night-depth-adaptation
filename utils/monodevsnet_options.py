@@ -69,7 +69,11 @@ class MonoDEVSOptions(MonodepthOptions):
                                  type=str,
                                  help="path to synthetic dataset",
                                  default=None)
-
+        self.parser.add_argument("--saved_folder",
+                                 type=str,
+                                 help="path to save evaluation image result",
+                                 default="./experiment_result")
+                                 
         # Training options
         self.parser.add_argument("--use_dc",
                                  help="if set, uses domain classifier with gradient reversal layer at the output of"

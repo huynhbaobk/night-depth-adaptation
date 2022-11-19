@@ -34,7 +34,13 @@ import os
 import cv2
 import numpy as np
 from matplotlib import pyplot as plt, cm
+from PIL import Image
 
+def get_concat_im_h(im1, im2):
+    dst = Image.new('RGB', (im1.width + im2.width, im1.height))
+    dst.paste(im1, (0, 0))
+    dst.paste(im2, (im1.width, 0))
+    return dst
 
 def depth_visualize(rgb, depth_im, title_='',
                     cmap_name='turbo', fig_num=0, d_min=0.1, d_max=80.):
@@ -44,11 +50,18 @@ def depth_visualize(rgb, depth_im, title_='',
     depth_im[depth_im > d_max] = d_max
     norm_depth = (depth_im - d_min) / (d_max - d_min)
     norm_depth = cmap(norm_depth)[:, :, :3]
+
     plt.figure(fig_num)
+    plt.axis('off')
+    # plt.imshow(norm_depth)
+    # plt.savefig("depth.png")
+
+    # plt.imshow(rgb)
+    # plt.savefig("rgb_day.png")
     plt.imshow(np.concatenate((rgb, norm_depth), 0))
     plt.title(title_)
-    # plt.show()
-    plt.pause(3)  # for 3 seconds
+
+    plt.pause(2)  # for 2 seconds
     return norm_depth
 
 

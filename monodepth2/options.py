@@ -45,7 +45,7 @@ class MonodepthOptions:
                                  type=str,
                                  help="dataset to train on",
                                  default="kitti",
-                                 choices=["any", "kitti", "kitti_odom", "kitti_depth", "kitti_test"])
+                                 choices=["any", "kitti", "kitti_odom", "kitti_depth", "kitti_test", "oxford"])
         self.parser.add_argument("--png",
                                  help="if set, trains from raw KITTI png files (instead of jpgs)",
                                  action="store_true")
@@ -140,7 +140,7 @@ class MonodepthOptions:
         self.parser.add_argument("--num_workers",
                                  type=int,
                                  help="number of dataloader workers",
-                                 default=12)
+                                 default=6)
 
         # LOADING options
         self.parser.add_argument("--load_weights_folder",

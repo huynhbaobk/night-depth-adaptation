@@ -45,11 +45,12 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from tqdm import tqdm
+import shutil
 
 import networks
 from monodepth2.datasets import KITTIRAWDataset, KITTIDepthDataset
 from utils import get_n_params, MonoDEVSOptions, convert_list2dict, readlines
-from utils.utils_local import Dict2Struct
+from utils.utils_local import Dict2Struct, get_concat_im_h
 
 home = expanduser("~")
 week_num = date.today().isocalendar()[1]
@@ -185,6 +186,7 @@ class Evaluation(object):
         # Images path list
         img_ext = '.png' if self.opt.png else '.jpg'
         self.im_path_list = []
+        print(self.opt.dataset)
         if self.opt.dataset == 'kitti':
             real_eigen = readlines(os.path.join(os.path.dirname(__file__), "splits", "eigen", "test_files.txt"))
             dataset = KITTIRAWDataset(data_path=self.opt.real_data_path, filenames=real_eigen,
@@ -194,7 +196,7 @@ class Evaluation(object):
             self.dataloader = DataLoader(dataset, self.opt.batch_size, shuffle=False, num_workers=opt.num_workers,
                                          pin_memory=True, drop_last=False)
             print('Total number of images in {} dataset: {}'.format(self.opt.dataset, dataset.__len__()))
-        if self.opt.dataset == 'kitti_depth':
+        elif self.opt.dataset == 'kitti_depth':
             real_eigen = readlines(os.path.join(os.path.dirname(__file__), "splits", "eigen", "test_files.txt"))
             dataset = KITTIDepthDataset(data_path=self.opt.real_data_path, filenames=real_eigen,
                                         height=self.opt.height, width=self.opt.width,
@@ -254,6 +256,11 @@ class Evaluation(object):
                 pred_depth_t[pred_depth_t > self.opt.max_depth] = self.opt.max_depth
 
                 # Save information
+                im_path_rgb = im_path
+                saved_folder = "./experiment_result"
+                file_name = im_path.split('/')[-1]
+                folder_name = os.path.dirname(im_path).split('/')[-1]
+                im_path = saved_folder + '/' + folder_name + '/' + file_name
                 folder_name = os.path.dirname(im_path).split('/')[-1]
                 depth_save_path = im_path.replace(folder_name + '/',
                                                   folder_name + '_' + 'depth_MonoDEVSNet' + '/'). \
@@ -268,8 +275,13 @@ class Evaluation(object):
 
                 if not os.path.exists(os.path.dirname(depth_save_path)):
                     os.makedirs(os.path.dirname(depth_save_path))
-                pred_depth_o.save(depth_save_path)
-                pred_depth_color.save(depth_save_path.replace('.png', '_color.png'))
+                # shutil.copyfile(im_path_rgb, depth_save_path.replace('.png', '_rgb.png'))
+                # pred_depth_o.save(depth_save_path.replace('.png', '_gray.png'))
+                # pred_depth_color.save(depth_save_path.replace('.png', '_color.png'))
+
+                rgb_image = Image.open(im_path_rgb)
+                concat_result = get_concat_im_h(rgb_image, pred_depth_color)
+                concat_result.save(depth_save_path.replace('.png', '_result.png'))
 
         print('time taken for network model {}-{}: {}'.format(self.opt.models_fcn_name['encoder'], self.opt.num_layers,
                                                               1 / np.mean(time_for_each_frame)))
