@@ -143,3 +143,5 @@ log_dir/
 *.mp4
 *.zip
 *.pth
+
+experiment_result/
