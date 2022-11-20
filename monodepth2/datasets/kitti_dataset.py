@@ -47,6 +47,7 @@ class KITTIDataset(MonoDataset):
             "depth",
             "image_0{}/data".format(self.side_map[side]),
             "{:010d}.npz".format(int(frame_index)))
+        
         return os.path.isfile(depth_filename)
 
     def get_color(self, folder, frame_index, side, do_flip):
@@ -77,7 +78,6 @@ class KITTIRAWDataset(KITTIDataset):
                                     "depth",
                                     "image_0{}/data".format(self.side_map[side]),
                                     "{:010d}.npz".format(int(frame_index)))
-
         depth_gt = np.load(depth_filename)["arr_0"]
 
         if do_flip:

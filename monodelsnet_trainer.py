@@ -896,7 +896,5 @@ if __name__ == "__main__":
     print("[INFO] - Init trainer")
     monodevs = MonoDEVSNetTrainer(options=opts)
     print("[INFO] - Start training")
-
     monodevs.train()
 
-    TheEnd = 1

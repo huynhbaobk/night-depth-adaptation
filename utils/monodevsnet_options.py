@@ -113,12 +113,22 @@ class MonoDEVSOptions(MonodepthOptions):
                                  type=str,
                                  help="dataset to train on",
                                  default="kitti",
-                                 choices=["kitti", "kitti_odom", "kitti_depth", "kitti_test"])
+                                 choices=["kitti", "kitti_odom", "kitti_depth", "kitti_test", "oxford_night"])
         self.parser.add_argument("--syn_dataset",
                                  type=str,
                                  help="dataset to train on",
                                  default="vk_2.0",
-                                 choices=["vk_1.0", "vk_2.0", "kitti_depth"])
+                                 choices=["vk_1.0", "vk_2.0", "kitti_depth", "kitti"])
+        self.parser.add_argument("--real_split",
+                                 type=str,
+                                 help="which training split to use",
+                                 choices=["eigen_zhou", "eigen_full", "odom", "benchmark", "oxford_night"],
+                                 default="oxford_night")
+        self.parser.add_argument("--syn_split",
+                                 type=str,
+                                 help="which training split to use",
+                                 choices=["eigen_zhou", "eigen_full", "odom", "benchmark", "oxford_night"],
+                                 default="eigen_zhou")       
         self.parser.add_argument("--total_number_of_images_for_training",
                                  help="Total number of images used for training from synthetic and real images",
                                  type=int,

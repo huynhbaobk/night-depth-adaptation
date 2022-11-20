@@ -180,6 +180,7 @@ class MonoNightDataset(data.Dataset):
         else:
             color_aug = (lambda x: x)
 
+        # print("[INFO] __getitem__ night: ", line)
         self.preprocess(inputs, color_aug)
 
         for i in self.frame_idxs:

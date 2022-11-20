@@ -74,11 +74,11 @@ from tqdm import tqdm
 import networks
 import monodepth2
 from datasets_EXT import VK1Dataset, VK2Dataset
-from monodepth2.datasets import KITTIRAWDataset, KITTIDepthDataset, KITTIOdomDataset
+from monodepth2.datasets import KITTIRAWDataset, KITTIDepthDataset, KITTIOdomDataset, OxfordNightDataset
 from monodepth2.evaluate_depth import compute_errors
 from monodepth2.layers import disp_to_depth, compute_depth_errors
 from monodepth2.trainer import Trainer
-from monodepth2.utils import normalize_image, readlines
+from monodepth2.utils import normalize_image, readlines, sec_to_hm_str
 from utils import get_n_params
 from utils.monodevsnet_options import MonoDEVSOptions
 
@@ -90,8 +90,6 @@ class MonoDEVSNetTrainer(Trainer):
         # Load experiments options/parameters
         self.opt.trainer_name = 'MonoDEVSNetTrainer'
         self.opt.use_pose_net = self.use_pose_net
-        print(self.opt.log_dir)
-        print(self.opt.model_name)
 
         # Set cuda index
         os.environ['CUDA_VISIBLE_DEVICES'] = str(self.opt.cuda_idx)
@@ -135,9 +133,9 @@ class MonoDEVSNetTrainer(Trainer):
         if self.opt.load_weights_folder is not None:
             self.load_model()
 
-        print("Models and tensorboard events files are saved to:\n  ", self.opt.log_dir)
-        print("Train model on device : {} \n  ", self.device)
-        print("number of training parameters for each model")
+        print("[INFO] Models and tensorboard events files are saved to:\n  ", self.opt.log_dir)
+        print("[INFO] Train model on device : {} \n  ", self.device)
+        print("[INFO] number of training parameters for each model")
         for model_name, model in self.models.items():
             print('{:^15}: {:^15}: {:>5.2f} M'.format(model_name, self.opt.models_fcn_name[model_name],
                                                       get_n_params(model) / 1000000))
@@ -151,59 +149,72 @@ class MonoDEVSNetTrainer(Trainer):
                          "kitti_odom": KITTIOdomDataset,
                          "kitti_depth": KITTIDepthDataset,
                          "vk_1.0": VK1Dataset,
-                         "vk_2.0": VK2Dataset}
+                         "vk_2.0": VK2Dataset,
+                         "oxford_night": OxfordNightDataset}
         self.real_dataset = datasets_dict[self.opt.real_dataset]
-        self.syn_dataset = datasets_dict[self.opt.syn_dataset]
-
-        syn_f_path = os.path.join(os.path.dirname(__file__), "splits", self.opt.syn_dataset, "train_files.txt")
-        syn_train_dataset = self.syn_dataset(self.opt, csv_file_path=syn_f_path, frame_ids=[0],
-                                             num_scales=4, is_train=True)
-
-        real_f_path = os.path.join(os.path.dirname(__file__), "monodepth2/splits", self.opt.split, "{}_files.txt")
+        self.syn_dataset =  datasets_dict[self.opt.syn_dataset]
+        
+        ################## Training dataset ##################
+        ### NIGHT
+        real_f_path = os.path.join(os.path.dirname(__file__), "monodepth2/splits", self.opt.real_split, "{}_files.txt")
         real_filenames = readlines(real_f_path.format("train"))
         real_train_dataset = self.real_dataset(data_path=self.opt.real_data_path, filenames=real_filenames,
                                                height=self.opt.height, width=self.opt.width,
                                                frame_idxs=self.opt.frame_ids, num_scales=4, is_train=True,
+                                               img_ext=".png")
+
+        
+        ### DAY
+        syn_f_path =  os.path.join(os.path.dirname(__file__), "monodepth2/splits", self.opt.syn_split, "{}_files.txt")
+        syn_filenames = readlines(syn_f_path.format("train"))
+        syn_train_dataset = self.syn_dataset(data_path=self.opt.syn_data_path, filenames=syn_filenames,
+                                               height=self.opt.height, width=self.opt.width,
+                                               frame_idxs=self.opt.frame_ids, num_scales=4, is_train=True,
                                                img_ext=img_ext)
 
-        # Validation data-set and data-loader
-        syn_val_dataset = self.syn_dataset(self.opt, csv_file_path=syn_f_path, frame_ids=[0],
-                                           num_scales=4, is_train=False)
+        ################## Validation dataset ##################
+        # NIGHT
         real_filenames = readlines(real_f_path.format("val"))
         real_val_dataset = self.real_dataset(data_path=self.opt.real_data_path, filenames=real_filenames,
                                              height=self.opt.height, width=self.opt.width,
-                                             frame_idxs=self.opt.frame_ids, num_scales=4, is_train=False,
+                                             frame_idxs=[0], num_scales=4, is_train=False,
+                                             img_ext=".png")
+
+        # DAY (KITTI) Eigen
+        syn_f_path = os.path.join(os.path.dirname(__file__), "monodepth2/splits", self.opt.eval_split, "{}_files.txt")
+        syn_filenames = readlines(syn_f_path.format("test"))
+        syn_val_dataset = self.syn_dataset(data_path=self.opt.syn_data_path, filenames=syn_filenames,
+                                             height=self.opt.height, width=self.opt.width,
+                                             frame_idxs=[0], num_scales=4, is_train=False,
                                              img_ext=img_ext)
 
-        real_f_path = os.path.join(os.path.dirname(__file__), "monodepth2/splits", "eigen", "{}_files.txt")
-        real_eigen_filenames = readlines(real_f_path.format("test"))
-        real_eigen_val_dataset = self.real_dataset(data_path=self.opt.real_data_path, filenames=real_eigen_filenames,
-                                                   height=self.opt.height, width=self.opt.width,
-                                                   frame_idxs=[0], num_scales=4, is_train=False, img_ext=img_ext)
-
-        # Training data-loaders
+        ################## Training loader ##################
+        # NIGHT
         self.real_train_loader = DataLoader(
             real_train_dataset, self.opt.batch_size, True,
             num_workers=self.opt.num_workers, pin_memory=True, drop_last=True)
+
+        # DAY
         self.syn_train_loader = DataLoader(
             syn_train_dataset, self.opt.batch_size, True,
             num_workers=self.opt.num_workers, pin_memory=True, drop_last=True)
-        # Validation data-loaders
+
+        ################## Validation loader ##################
+        # NIGHT 
         self.real_val_loader = DataLoader(
             real_val_dataset, self.opt.batch_size, False,
             num_workers=self.opt.num_workers, pin_memory=True, drop_last=True)
+        
+        # DAY
         self.syn_val_loader = DataLoader(
             syn_val_dataset, self.opt.batch_size, False,
             num_workers=self.opt.num_workers, pin_memory=True, drop_last=True)
-        self.real_eigen_val_loader = DataLoader(
-            real_eigen_val_dataset, self.opt.batch_size, False,
-            num_workers=self.opt.num_workers, pin_memory=True, drop_last=False)
 
         # Training iteration approach
         self.real_train_iter, self.syn_train_iter = iter(self.real_train_loader), iter(self.syn_train_loader)
+        
         # val iteration approach
-        self.real_val_iter, self.syn_val_iter, self.real_eigen_val_iter = \
-            iter(self.real_val_loader), iter(self.syn_val_loader), iter(self.real_eigen_val_loader)
+        self.real_val_iter, self.syn_val_iter = iter(self.real_val_loader), iter(self.syn_val_loader)
 
         gt_path = os.path.join(os.path.dirname(__file__), 'splits', self.opt.eval_split, "gt_depths.npz")
         self.gt_depths = np.load(gt_path, fix_imports=True, encoding='latin1', allow_pickle=True)["data"]
@@ -222,11 +233,11 @@ class MonoDEVSNetTrainer(Trainer):
                                '_ms' + str(self.opt.use_ms)[0] +
                                '_' + self.opt.version).replace(' ', '')
         self.log_path = os.path.join(self.opt.log_dir, self.opt.model_name)
-        print('log directory path: {}'.format(self.log_path))
+        print('[INFO] Log directory path: {}'.format(self.log_path))
 
         # Setting tensorboard
         self.writers = {}
-        for mode in ["train", "val_real", "val_syn", "val_real_eigen", "val_real_kitti_2015"]:
+        for mode in ["train", "val_night", "val_day"]:
             self.writers[mode] = SummaryWriter(os.path.join(self.log_path, mode))
 
         # Additional loss functions 
@@ -238,17 +249,19 @@ class MonoDEVSNetTrainer(Trainer):
         self.depth_metric_names = [
             "de/abs_rel", "de/sq_rel", "de/rms", "de/log_rms", "da/a1", "da/a2", "da/a3"]
 
-        print("Using split:\n  ", self.opt.split)
-        print("There are real: {:d}, syn: {:d} training items and "
-              "real: {:d}, real Eigen: {:d}, syn: {:d} validation items\n".
+        print("[INFO] Using night split:\n  ", self.opt.real_split)
+        print("[INFO] Using day training split:\n  ", self.opt.syn_split)
+        print("[INFO] Using day validation split:\n  ", self.opt.eval_split)
+
+        print("[INFO] There are night: {:d}, day: {:d} training items and "
+              "night: {:d}, day Eigen: {:d} validation items\n".
               format(len(real_train_dataset), len(syn_train_dataset),
-                     len(real_val_dataset), len(real_eigen_val_dataset), len(syn_val_dataset)))
+                     len(real_val_dataset), len(syn_val_dataset)))
 
         # train def
         self.step, self.epoch, self.previous_sp_loss = 0, 0, 0
         self.early_phase, self.mid_phase, self.late_phase = False, False, False
         self.start_time = time.time()
-        print(self.opt)
         self.save_opts()
 
     def train(self):
@@ -302,37 +315,37 @@ class MonoDEVSNetTrainer(Trainer):
                 self.zero_grad()
                 self.run_epoch()
 
-                # Run and extract results on validation KITTI Eigen split
-                tt_val = time.time()
-                if True:
-                    # Evaluation on KITTI Eigen Validation set dataset
-                    mean_errors_rsf, mean_errors_asf = self.val_real_eigen_dataset()
+                # # Run and extract results on validation KITTI Eigen split
+                # tt_val = time.time()
+                # if True:
+                #     # Evaluation on KITTI Eigen Validation set dataset
+                #     mean_errors_rsf, mean_errors_asf = self.val_real_eigen_dataset()
 
-                    # Save best model based on best relative depth
-                    best_model_mean_errors_rsf.append(mean_errors_rsf)
-                    if mean_errors_rsf[0] < best_abs_rel_rsf:
-                        best_epoch_rsf = self.epoch
-                        for model_name, model in self.models.items():
-                            model_state_dict = deepcopy(model.state_dict())
-                            best_model_weights_rsf[model_name] = model_state_dict
-                        best_abs_rel_rsf = mean_errors_rsf[0]
+                #     # Save best model based on best relative depth
+                #     best_model_mean_errors_rsf.append(mean_errors_rsf)
+                #     if mean_errors_rsf[0] < best_abs_rel_rsf:
+                #         best_epoch_rsf = self.epoch
+                #         for model_name, model in self.models.items():
+                #             model_state_dict = deepcopy(model.state_dict())
+                #             best_model_weights_rsf[model_name] = model_state_dict
+                #         best_abs_rel_rsf = mean_errors_rsf[0]
 
-                    # Save best model based on best absolute depth
-                    best_model_mean_errors_asf.append(mean_errors_asf)
-                    if mean_errors_asf[0] < best_abs_rel_asf:
-                        best_epoch_asf = self.epoch
-                        for model_name, model in self.models.items():
-                            model_state_dict = deepcopy(model.state_dict())
-                            best_model_weights_asf[model_name] = model_state_dict
-                        best_abs_rel_asf = mean_errors_asf[0]
+                #     # Save best model based on best absolute depth
+                #     best_model_mean_errors_asf.append(mean_errors_asf)
+                #     if mean_errors_asf[0] < best_abs_rel_asf:
+                #         best_epoch_asf = self.epoch
+                #         for model_name, model in self.models.items():
+                #             model_state_dict = deepcopy(model.state_dict())
+                #             best_model_weights_asf[model_name] = model_state_dict
+                #         best_abs_rel_asf = mean_errors_asf[0]
 
-                    # Evaluation on KITTI 2015 Training set dataset
-                    # mean_errors_depth_kitti_2015, IoU_kitti_2015 = self.val_real_kitti_2015_dataset()
+                #     # Evaluation on KITTI 2015 Training set dataset
+                #     # mean_errors_depth_kitti_2015, IoU_kitti_2015 = self.val_real_kitti_2015_dataset()
 
-                if self.epoch % self.opt.save_frequency == 0:
-                    self.save_model()
-                tt_val = time.time() - tt_val
-                print("\nTime taken to compute depth results on validation set: {} mins\n ".format(tt_val / 60))
+                # if self.epoch % self.opt.save_frequency == 0:
+                #     self.save_model()
+                # tt_val = time.time() - tt_val
+                # print("\nTime taken to compute depth results on validation set: {} mins\n ".format(tt_val / 60))
             self.save_model()
             save_best_model(self)
 
@@ -347,9 +360,19 @@ class MonoDEVSNetTrainer(Trainer):
     def run_epoch(self):
         """Run a single epoch of training and validation
         """
-        print("Training")
         self.set_train()
-syn_train_iter print('Stopped as the iteration has reached to the END, and reloading the synthetic dataloader')
+
+        for batch_idx in range(0, self.num_total_batch):
+
+            before_op_time = time.time()
+            # Choosing the dataloader for training model
+            if self.choosing_dataset_to_train_with(batch_idx):
+                # Synthetic dataset
+                self.syn_or_real = 'syn'
+                try:
+                    inputs = self.syn_train_iter.__next__()
+                except StopIteration:
+                    print('Stopped as the iteration has reached to the END, and reloading the synthetic dataloader')
                     self.syn_train_iter = iter(self.syn_train_loader)
                     inputs = self.syn_train_iter.__next__()
             else:
@@ -392,17 +415,17 @@ syn_train_iter print('Stopped as the iteration has reached to the END, and reloa
                 self.model_optimizer.zero_grad()
                 self.zero_grad()
 
-
-            duration = time.time() - before_op_time
-            self.log_time(batch_idx, duration, losses["loss"].cpu().data)
+            if batch_idx % 50 == 0 or (batch_idx-1)%50 == 0:
+                duration = time.time() - before_op_time
+                self.log_time(batch_idx, duration, losses["loss"].cpu().data)
 
             if "depth_gt" in inputs:
                 self.compute_depth_losses(inputs, outputs, losses)
 
             if self.early_phase or self.mid_phase or self.late_phase:
                 self.log("train", inputs, outputs, losses)
-                self.val("real")
-                self.val("syn")
+                # self.val("real")
+                # self.val("syn")
 
             if (batch_idx + 1) % 2 == 0:
                 current_lr = self.update_learning_rate(self.model_optimizer, self.opt.learning_rate)
@@ -563,11 +586,15 @@ syn_train_iter print('Stopped as the iteration has reached to the END, and reloa
         """Print a logging statement to the terminal
         """
         samples_per_sec = self.opt.batch_size / duration
-        time_so_far = time.time() - self.start_time
-        print_string = "exp_name {}  \n| dataset: {:>5} | epoch {:>3} | batch {:>6}/{:>6} | " \
-                       "examples/s: {:5.1f} | loss: {:.5f}"
-        print(print_string.format(self.log_path.split('/')[-1], self.syn_or_real, self.epoch, batch_idx,
-                                  self.num_total_batch, samples_per_sec, loss))
+        time_sofar = time.time() - self.start_time
+        training_time_left = (
+            self.num_total_steps / self.step - 1.0) * time_sofar if self.step > 0 else 0
+        print_string = "exp_name {}  \n| dataset: {:>5} | epoch {:>3} | batch {:>6} | examples/s: {:5.1f}" + \
+            " | loss: {:.5f} | time elapsed: {} | time left: {}"
+        print(print_string.format(self.log_path.split('/')[-1], self.syn_or_real, 
+                                  self.epoch, batch_idx, samples_per_sec, loss,
+                                  sec_to_hm_str(time_sofar), sec_to_hm_str(training_time_left)))
+
 
     def log(self, mode, inputs, outputs, losses):
         """Write an event to the tensorboard events file
@@ -578,22 +605,22 @@ syn_train_iter print('Stopped as the iteration has reached to the END, and reloa
                 writer.add_scalar("{}".format(l), v, self.step)
 
         for j in [0]:  # range(min(4, self.opt.batch_size)):  # write a maximum of four images
-            writer.add_image(
-                "depth_gt_{}/{}".format(0, j),
-                normalize_image(inputs["depth_gt"][j]), self.step)
+            # writer.add_image(
+            #     "depth_gt_{}/{}".format(0, j),
+            #     normalize_image(inputs["depth_gt"][j]), self.step)
 
             writer.add_image(
                 "depth_pred_{}/{}".format(0, j),
                 normalize_image(outputs[("depth", 0, 0)][j]), self.step)
 
-            diff = torch.abs(F.interpolate(inputs["depth_gt"] / self.opt.syn_scaling_factor,
-                                           [self.opt.height, self.opt.width], mode="bilinear", align_corners=False)[j]
-                             - outputs[("depth", 0, 0)][j])
-            mask = F.interpolate((inputs["depth_gt"][j] > 0).float().unsqueeze(0), diff.shape[1:]).squeeze()
-            diff = diff * mask.float()
-            writer.add_image(
-                "abs_depth_diff_{}/{}".format(0, j),
-                normalize_image(diff), self.step)
+            # diff = torch.abs(F.interpolate(inputs["depth_gt"] / self.opt.syn_scaling_factor,
+            #                                [self.opt.height, self.opt.width], mode="bilinear", align_corners=False)[j]
+            #                  - outputs[("depth", 0, 0)][j])
+            # mask = F.interpolate((inputs["depth_gt"][j] > 0).float().unsqueeze(0), diff.shape[1:]).squeeze()
+            # diff = diff * mask.float()
+            # writer.add_image(
+            #     "abs_depth_diff_{}/{}".format(0, j),
+            #     normalize_image(diff), self.step)
 
             for s in [0]:  # self.opt.scales:
                 frame_ids = [0]  # For time being
@@ -602,7 +629,14 @@ syn_train_iter print('Stopped as the iteration has reached to the END, and reloa
                     writer.add_image(
                         "color_{}_{}/{}".format(frame_id, s, j),
                         inputs[("color", frame_id, s)][j].data, self.step)
-                    if s == 0 and frame_idcolor_mat(s, j),
+                    if s == 0 and frame_id != 0:
+                        writer.add_image(
+                            "color_pred_{}_{}/{}".format(frame_id, s, j),
+                            outputs[("color", frame_id, s)][j].data, self.step)
+
+                if 'self' in self.opt.loss_fcn:
+                    writer.add_image(
+                        "disp_{}/{}".format(s, j),
                         normalize_image(outputs[("disp", s)][j]), self.step)
 
                     writer.add_image(
@@ -619,20 +653,20 @@ syn_train_iter print('Stopped as the iteration has reached to the END, and reloa
         while os.path.exists(dst_path):
             dst_path = os.path.join(self.log_path, 'code', 'v' + str(iter_yes_or_no))
             iter_yes_or_no = iter_yes_or_no + 1
-            print("iter_yes_or_no ", iter_yes_or_no)
+            # print("iter_yes_or_no ", iter_yes_or_no)
         user_name = expanduser("~")
         try:
-            print("shutil.copytree")
+            # print("shutil.copytree")
             print(os.getcwd())
             print(dst_path)
             shutil.copytree(os.getcwd(), dst_path, ignore=shutil.ignore_patterns('*.pyc', 'tmp*'))
-            print("Done shutil.copytree")
+            # print("Done shutil.copytree")
 
         except Exception as e_copytree:
             print("Exception")
             print(e_copytree)
 
-        print("Create models")
+        # print("Create models")
         models_dir = os.path.join(self.log_path, "models")
         if not os.path.exists(models_dir):
             os.makedirs(models_dir)
@@ -775,7 +809,7 @@ syn_train_iter print('Stopped as the iteration has reached to the END, and reloa
         print("\n asf \n  " + ("{:>8} | " * 7).format("abs_rel", "sq_rel", "rmse", "rmse_log", "a1", "a2", "a3"))
         print(("&{: 8.3f}  " * 7).format(*mean_errors_asf.tolist()) + "\\\\")
 
-        self.log_evaluation('val_real_eigen', mean_errors_rsf, med_std, mean_errors_asf)
+        self.log_evaluation('val_day_eigen', mean_errors_rsf, med_std, mean_errors_asf)
         self.set_train()
 
         return mean_errors_rsf, mean_errors_asf
@@ -788,7 +822,6 @@ syn_train_iter print('Stopped as the iteration has reached to the END, and reloa
         writer.add_scalar("median/mean_median", med_std[0], self.epoch)
         writer.add_scalar("median/median_std", med_std[1], self.epoch)
 
-        #relative
         writer.add_scalar("depth_rsf/abs_rel", errors_rsf[0], self.epoch)
         writer.add_scalar("depth_rsf/sq_rel", errors_rsf[1], self.epoch)
         writer.add_scalar("depth_rsf/rmse", errors_rsf[2], self.epoch)
@@ -796,8 +829,6 @@ syn_train_iter print('Stopped as the iteration has reached to the END, and reloa
         writer.add_scalar("depth_rsf/a1", errors_rsf[4], self.epoch)
         writer.add_scalar("depth_rsf/a2", errors_rsf[5], self.epoch)
         writer.add_scalar("depth_rsf/a3", errors_rsf[6], self.epoch)
-
-        ### absolute
         writer.add_scalar("depth_asf/abs_rel", errors_asf[0], self.epoch)
         writer.add_scalar("depth_asf/sq_rel", errors_asf[1], self.epoch)
         writer.add_scalar("depth_asf/rmse", errors_asf[2], self.epoch)

@@ -53,3 +53,20 @@ python evaluation.py \
   --load_weights_folder /content/MonoDEVSNet/pretrained_model/hrnet_w48_vk1
 
 
+python nightscenes_trainer.py \
+        --use_dc --use_le --use_ms \
+        --cuda_idx 0 \
+        --num_workers 8 \
+        --num_epochs 2 \
+        --batch_size 4 \
+        --height 128 \
+        --width 480 \
+        --max_depth 80 \
+        --version nightday_480x128 \
+        --real_dataset oxford_night \
+        --syn_dataset kitti \
+        --real_data_path /media/aiteam/DataAI/depth_datasets/oxford \
+        --syn_data_path /media/aiteam/DataAI/depth_datasets/kitti_precompute_depth_MonoDELSNet \
+        --real_split oxford_night \
+        --syn_split eigen_zhou \
+        --eval_split eigen

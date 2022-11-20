@@ -177,7 +177,6 @@ class MonoDataset(data.Dataset):
                 self.brightness, self.contrast, self.saturation, self.hue)
         else:
             color_aug = (lambda x: x)
-
         self.preprocess(inputs, color_aug)
 
         for i in self.frame_idxs:
