@@ -151,7 +151,6 @@ class MonoDEVSNetTrainer(Trainer):
                          "vk_1.0": VK1Dataset,
                          "vk_2.0": VK2Dataset,
                          "oxford_night": OxfordNightDataset}
-                         
         self.real_dataset = datasets_dict[self.opt.real_dataset]
         self.syn_dataset =  datasets_dict[self.opt.syn_dataset]
         
@@ -234,6 +233,7 @@ class MonoDEVSNetTrainer(Trainer):
                                '_ms' + str(self.opt.use_ms)[0] +
                                '_' + self.opt.version).replace(' ', '')
         self.log_path = os.path.join(self.opt.log_dir, self.opt.model_name)
+        print('[INFO] Log directory path: {}'.format(self.log_path))
 
         # Setting tensorboard
         self.writers = {}
@@ -254,7 +254,7 @@ class MonoDEVSNetTrainer(Trainer):
         print("[INFO] Using day validation split:\n  ", self.opt.eval_split)
 
         print("[INFO] There are night: {:d}, day: {:d} training items and "
-              "night: {:d}, day: {:d} validation items\n".
+              "night: {:d}, day Eigen: {:d} validation items\n".
               format(len(real_train_dataset), len(syn_train_dataset),
                      len(real_val_dataset), len(syn_val_dataset)))
 
@@ -315,37 +315,37 @@ class MonoDEVSNetTrainer(Trainer):
                 self.zero_grad()
                 self.run_epoch()
 
-                # # Run and extract results on validation KITTI Eigen split
-                # tt_val = time.time()
-                # if self.epoch%5==0:
-                #     # Evaluation on KITTI Eigen Validation set dataset
-                #     mean_errors_rsf, mean_errors_asf = self.val_real_eigen_dataset()
+                # Run and extract results on validation KITTI Eigen split
+                tt_val = time.time()
+                if self.epoch%5==0:
+                    # Evaluation on KITTI Eigen Validation set dataset
+                    mean_errors_rsf, mean_errors_asf = self.val_real_eigen_dataset()
 
-                #     # Save best model based on best relative depth
-                #     best_model_mean_errors_rsf.append(mean_errors_rsf)
-                #     if mean_errors_rsf[0] < best_abs_rel_rsf:
-                #         best_epoch_rsf = self.epoch
-                #         for model_name, model in self.models.items():
-                #             model_state_dict = deepcopy(model.state_dict())
-                #             best_model_weights_rsf[model_name] = model_state_dict
-                #         best_abs_rel_rsf = mean_errors_rsf[0]
+                    # Save best model based on best relative depth
+                    best_model_mean_errors_rsf.append(mean_errors_rsf)
+                    if mean_errors_rsf[0] < best_abs_rel_rsf:
+                        best_epoch_rsf = self.epoch
+                        for model_name, model in self.models.items():
+                            model_state_dict = deepcopy(model.state_dict())
+                            best_model_weights_rsf[model_name] = model_state_dict
+                        best_abs_rel_rsf = mean_errors_rsf[0]
 
-                #     # Save best model based on best absolute depth
-                #     best_model_mean_errors_asf.append(mean_errors_asf)
-                #     if mean_errors_asf[0] < best_abs_rel_asf:
-                #         best_epoch_asf = self.epoch
-                #         for model_name, model in self.models.items():
-                #             model_state_dict = deepcopy(model.state_dict())
-                #             best_model_weights_asf[model_name] = model_state_dict
-                #         best_abs_rel_asf = mean_errors_asf[0]
+                    # Save best model based on best absolute depth
+                    best_model_mean_errors_asf.append(mean_errors_asf)
+                    if mean_errors_asf[0] < best_abs_rel_asf:
+                        best_epoch_asf = self.epoch
+                        for model_name, model in self.models.items():
+                            model_state_dict = deepcopy(model.state_dict())
+                            best_model_weights_asf[model_name] = model_state_dict
+                        best_abs_rel_asf = mean_errors_asf[0]
 
                     # Evaluation on KITTI 2015 Training set dataset
                     # mean_errors_depth_kitti_2015, IoU_kitti_2015 = self.val_real_kitti_2015_dataset()
 
                 if self.epoch % self.opt.save_frequency == 0:
                     self.save_model()
-                # tt_val = time.time() - tt_val
-                # print("\nTime taken to compute depth results on validation set: {} mins\n ".format(tt_val / 60))
+                tt_val = time.time() - tt_val
+                print("\nTime taken to compute depth results on validation set: {} mins\n ".format(tt_val / 60))
             # self.save_model()
             # save_best_model(self)
 
@@ -422,7 +422,7 @@ class MonoDEVSNetTrainer(Trainer):
             if "depth_gt" in inputs:
                 self.compute_depth_losses(inputs, outputs, losses)
 
-            if batch_idx % 50 == 0 or (batch_idx-1)%50 == 0:
+            if self.early_phase or self.mid_phase or self.late_phase:
                 self.log("train", inputs, outputs, losses)
                 # self.val("real")
                 # self.val("syn")
@@ -647,24 +647,24 @@ class MonoDEVSNetTrainer(Trainer):
         """Save options to disk so we know what we ran this experiment with
         """
 
-        # # save code as another folder in log_path
-        # dst_path = os.path.join(self.log_path, 'code', 'v0')
-        # iter_yes_or_no = 0
-        # while os.path.exists(dst_path):
-        #     dst_path = os.path.join(self.log_path, 'code', 'v' + str(iter_yes_or_no))
-        #     iter_yes_or_no = iter_yes_or_no + 1
-        #     # print("iter_yes_or_no ", iter_yes_or_no)
-        # user_name = expanduser("~")
-        # try:
-        #     # print("shutil.copytree")
-        #     # print(os.getcwd())
-        #     # print(dst_path)
-        #     shutil.copytree(os.getcwd(), dst_path, ignore=shutil.ignore_patterns('*.pyc', 'tmp*'))
-        #     # print("Done shutil.copytree")
+        # save code as another folder in log_path
+        dst_path = os.path.join(self.log_path, 'code', 'v0')
+        iter_yes_or_no = 0
+        while os.path.exists(dst_path):
+            dst_path = os.path.join(self.log_path, 'code', 'v' + str(iter_yes_or_no))
+            iter_yes_or_no = iter_yes_or_no + 1
+            # print("iter_yes_or_no ", iter_yes_or_no)
+        user_name = expanduser("~")
+        try:
+            # print("shutil.copytree")
+            print(os.getcwd())
+            print(dst_path)
+            shutil.copytree(os.getcwd(), dst_path, ignore=shutil.ignore_patterns('*.pyc', 'tmp*'))
+            # print("Done shutil.copytree")
 
-        # except Exception as e_copytree:
-        #     print("Exception")
-        #     print(e_copytree)
+        except Exception as e_copytree:
+            print("Exception")
+            print(e_copytree)
 
         # print("Create models")
         models_dir = os.path.join(self.log_path, "models")
@@ -674,6 +674,8 @@ class MonoDEVSNetTrainer(Trainer):
 
         with open(os.path.join(models_dir, 'opt.json'), 'w', encoding='utf-8') as f:
             json.dump(to_save, f, indent=2)
+
+        print("Done save_opts")
 
     def update_learning_rate(self, optimizer, base_lr_rate, power=0.9):
         step = max(1, self.step)
